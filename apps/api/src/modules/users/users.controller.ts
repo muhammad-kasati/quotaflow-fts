@@ -16,9 +16,9 @@ function resolveAccountId(req: Request): string {
   if (req.account?.id) {
     return req.account.id;
   }
-  const queryAccountId = req.query.accountId as string;
-  if (req.actor === 'admin' && queryAccountId) {
-    return queryAccountId;
+  const accountId = (req.query.accountId as string) || (req.body?.accountId as string);
+  if (req.actor === 'admin' && accountId) {
+    return accountId;
   }
   throw new AppError(400, 'ACCOUNT_REQUIRED', 'Account context or accountId parameter required.');
 }

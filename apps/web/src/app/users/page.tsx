@@ -37,22 +37,13 @@ export default function UsersPage() {
     if (!newUserName.trim()) return;
 
     try {
-      await apiClient.updateUser('', { name: newUserName, planId: newUserPlanId }); // or user create
-      // Using fetchFromApi for create
-      await (apiClient as any).consume; // dummy check
-      const res = await fetch(`http://localhost:4000/api/v1/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Key': 'qf_admin_dev_bootstrap_secret_key_2026',
-        },
-        body: JSON.stringify({
-          accountId: 'account_demo_acme',
-          name: newUserName,
+      await apiClient.createUser(
+        {
+          name: newUserName.trim(),
           planId: newUserPlanId,
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to create user');
+        },
+        'account_demo_acme'
+      );
 
       setNewUserName('');
       setActionMsg('User created successfully!');

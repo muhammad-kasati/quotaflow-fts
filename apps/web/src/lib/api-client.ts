@@ -62,6 +62,11 @@ export const apiClient = {
   // Users
   getUsers: (accountId?: string) =>
     fetchFromApi(`/api/v1/users${accountId ? `?accountId=${accountId}` : ''}`),
+  createUser: (data: { name: string; planId: string }, accountId?: string) =>
+    fetchFromApi(`/api/v1/users${accountId ? `?accountId=${accountId}` : ''}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   getUserOverview: (userId: string, period?: string) =>
     fetchFromApi(`/api/v1/users/${userId}/overview${period ? `?period=${period}` : ''}`),
   updateUser: (userId: string, data: { name?: string; planId?: string }) =>
