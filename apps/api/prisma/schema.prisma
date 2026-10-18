@@ -1,0 +1,279 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PlanType {
+  ACCOUNT
+  USER
+}
+
+enum RejectionScope {
+  ACCOUNT
+  USER
+}
+
+enum RejectionCode {
+  ACCOUNT_MAX_UNITS_EXCEEDED
+  USER_MAX_UNITS_EXCEEDED
+  ACCOUNT_QUOTA_EXCEEDED
+  USER_QUOTA_EXCEEDED
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum RequestStatus {
+  ACCEPTED
+  REJECTED
+}
+
+enum WebhookEventStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  name      String
+  planId    String
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plan           Plan                   @relation(fields: [planId], references: [id])
+  users          User[]
+  apiKeys        ApiKey[]
+  monthlyUsages  AccountMonthlyUsage[]
+  requests       ConsumptionRequest[]
+  alertEvents    AlertEvent[]
+  webhookConfigs WebhookConfig[]
+  webhookEvents  WebhookEvent[]
+  customPlans    Plan[]                 @relation("AccountCustomPlans")
+
+  @@index([status])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  accountId String
+  name      String
+  planId    String
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account       Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  plan          Plan               @relation(fields: [planId], references: [id])
+  monthlyUsages UserMonthlyUsage[]
+  requests      ConsumptionRequest[]
+  alertEvents   AlertEvent[]
+
+  @@index([accountId])
+  @@index([status])
+}
+
+model Plan {
+  id                 String   @id
+  name               String
+  type               PlanType
+  monthlyAllowance   Int
+  maxUnitsPerRequest Int
+  isPredefined       Boolean  @default(false)
+  ownerAccountId     String?
+  version            Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  ownerAccount Account?      @relation("AccountCustomPlans", fields: [ownerAccountId], references: [id], onDelete: SetNull)
+  versions     PlanVersion[]
+  accounts     Account[]
+  users        User[]
+
+  @@index([type])
+  @@index([ownerAccountId])
+}
+
+model PlanVersion {
+  id                 String   @id @default(cuid())
+  planId             String
+  version            Int
+  name               String
+  type               PlanType
+  monthlyAllowance   Int
+  maxUnitsPerRequest Int
+  changeReason       String?
+  createdAt          DateTime @default(now())
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, version])
+  @@index([planId])
+}
+
+model ApiKey {
+  id         String       @id @default(cuid())
+  accountId  String
+  name       String
+  keyPrefix  String
+  keyHash    String       @unique
+  status     ApiKeyStatus @default(ACTIVE)
+  lastUsedAt DateTime?
+  createdAt  DateTime     @default(now())
+  revokedAt  DateTime?
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([status])
+}
+
+model AccountMonthlyUsage {
+  id               String   @id @default(cuid())
+  accountId        String
+  period           String   // YYYY-MM UTC
+  consumedUnits    Int      @default(0)
+  acceptedRequests Int      @default(0)
+  rejectedRequests Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, period])
+  @@index([accountId])
+}
+
+model UserMonthlyUsage {
+  id               String   @id @default(cuid())
+  userId           String
+  accountId        String
+  period           String   // YYYY-MM UTC
+  consumedUnits    Int      @default(0)
+  acceptedRequests Int      @default(0)
+  rejectedRequests Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+  @@index([userId])
+  @@index([accountId, period])
+}
+
+model ConsumptionRequest {
+  id                    String          @id @default(cuid())
+  requestId             String
+  accountId             String
+  userId                String
+  units                 Int
+  period                String
+  status                RequestStatus
+  rejectionScope        RejectionScope?
+  rejectionCode         RejectionCode?
+  rejectionReason       String?
+  accountPlanVersionId  String?
+  userPlanVersionId     String?
+  accountConsumedAfter  Int
+  accountRemainingAfter Int
+  userConsumedAfter     Int
+  userRemainingAfter    Int
+  createdAt             DateTime        @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, requestId])
+  @@index([accountId, period])
+  @@index([userId, period])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model AlertEvent {
+  id               String         @id @default(cuid())
+  accountId        String
+  userId           String?
+  scope            RejectionScope
+  period           String
+  threshold        Int
+  consumedUnits    Int
+  monthlyAllowance Int
+  percentage       Float
+  createdAt        DateTime       @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId, period, threshold])
+  @@index([accountId, period])
+}
+
+model WebhookConfig {
+  id        String   @id @default(cuid())
+  accountId String
+  url       String
+  secret    String
+  events    String[] @default(["THRESHOLD_80", "THRESHOLD_90", "THRESHOLD_100"])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+model WebhookEvent {
+  id            String             @id @default(cuid())
+  accountId     String
+  eventType     String
+  payload       String
+  status        WebhookEventStatus @default(PENDING)
+  attempts      Int                @default(0)
+  nextAttemptAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  account          Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deliveryAttempts WebhookDeliveryAttempt[]
+
+  @@index([status, nextAttemptAt])
+  @@index([accountId])
+}
+
+model WebhookDeliveryAttempt {
+  id           String   @id @default(cuid())
+  eventId      String
+  statusCode   Int?
+  responseBody String?
+  errorMessage String?
+  durationMs   Int?
+  createdAt    DateTime @default(now())
+
+  event WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  actor          String
+  action         String
+  targetResource String
+  targetId       String
+  metadata       String?
+  createdAt      DateTime @default(now())
+
+  @@index([targetResource, targetId])
+  @@index([createdAt])
+  @@index([actor])
+}
